@@ -1,0 +1,41 @@
+C51 COMPILER V9.60.7.0   LED1                                                              11/19/2025 10:38:28 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE LED1
+OBJECT MODULE PLACED IN .\Objects\led1.obj
+COMPILER INVOKED BY: D:\Keil uvision5 C51v961(64bit)\C51\BIN\C51.EXE led1.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND 
+                    -PRINT(.\Listings\led1.lst) TABS(2) OBJECT(.\Objects\led1.obj)
+
+line level    source
+
+   1          #include <REGX52.H>
+   2          sbit L1=P1^0;
+   3          delay(int num)
+   4          {
+   5   1      int x,y;
+   6   1      for(x=num;x>0;x--)
+   7   1      for(y=110;y>0;y--)
+   8   1      {
+   9   2      }
+  10   1      }
+  11          void main()
+  12          {
+  13   1      L1=0;
+  14   1      delay(500);
+  15   1      L1=1;
+  16   1      }
+*** WARNING C290 IN LINE 10 OF led1.c: missing return value
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     44    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  1 WARNING(S),  0 ERROR(S)

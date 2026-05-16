@@ -1,0 +1,45 @@
+C51 COMPILER V9.60.7.0   SHU1                                                              11/22/2025 19:14:30 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE SHU1
+OBJECT MODULE PLACED IN .\Objects\shu1.obj
+COMPILER INVOKED BY: D:\Keil uvision5 C51v961(64bit)\C51\BIN\C51.EXE shu1.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND 
+                    -PRINT(.\Listings\shu1.lst) TABS(2) OBJECT(.\Objects\shu1.obj)
+
+line level    source
+
+   1          #include <REGX52.H>
+   2          
+   3          sbit LED = P1^0;  // ??LED??
+   4          
+   5          void DelayMS(unsigned int ms)
+   6          {
+   7   1          unsigned int i, j;
+   8   1          for(i = ms; i > 0; i--)
+   9   1              for(j = 114; j > 0; j--);
+  10   1      }
+  11          
+  12          void main()
+  13          {
+  14   1          while(1)
+  15   1          {
+  16   2              LED = 0;      // ??LED(?????)
+  17   2              DelayMS(500); // ??500ms
+  18   2              LED = 1;      // ??LED
+  19   2              DelayMS(500); // ??500ms
+  20   2          }
+  21   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     50    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

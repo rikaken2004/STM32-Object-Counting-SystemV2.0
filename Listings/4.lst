@@ -1,0 +1,85 @@
+C51 COMPILER V9.60.7.0   4                                                                 11/19/2025 15:10:32 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE 4
+OBJECT MODULE PLACED IN .\Objects\4.obj
+COMPILER INVOKED BY: D:\Keil uvision5 C51v961(64bit)\C51\BIN\C51.EXE 4.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND PRI
+                    -NT(.\Listings\4.lst) TABS(2) OBJECT(.\Objects\4.obj)
+
+line level    source
+
+   1          
+   2          #include <REGX52.H>
+   3          sbit MODE_PIN = P3^2;
+   4          void delay(unsigned int ms)
+   5          {
+   6   1          unsigned int i, j;
+   7   1          for(i = ms; i > 0; i--)
+   8   1              for(j = 110; j > 0; j--);
+   9   1      }
+  10          
+  11          void mode0_unidirectional_flow(void)
+  12          {
+  13   1          unsigned char i;
+  14   1          for(i = 0; i < 8; i++)
+  15   1          {
+  16   2              P1 = ~(0x01 << i);  
+  17   2              delay(300);
+  18   2              
+  19   2              
+  20   2              if(MODE_PIN != 0) return;
+  21   2          }
+  22   1      }
+  23          
+  24          void mode1_bidirectional_flow(void)
+  25          {
+  26   1          unsigned char i;
+  27   1          
+  28   1          for(i = 0; i < 8; i++)
+  29   1          {
+  30   2              P1 = ~(0x01 << i);
+  31   2              delay(300);
+  32   2              if(MODE_PIN != 1) return;
+  33   2          }
+  34   1          
+  35   1          for(i = 0; i < 8; i++)
+  36   1          {
+  37   2              P1 = ~(0x80 >> i);
+  38   2              delay(300);
+  39   2              if(MODE_PIN != 1) return;
+  40   2          }
+  41   1      }
+  42          
+  43          void main()
+  44          {
+  45   1          P1 = 0xFF;  
+  46   1          P3 = 0xFF;  
+  47   1          
+  48   1          while(1)
+  49   1          {
+  50   2              if(MODE_PIN == 0)
+  51   2              {
+  52   3                  mode0_unidirectional_flow();
+  53   3              }
+  54   2              else
+C51 COMPILER V9.60.7.0   4                                                                 11/19/2025 15:10:32 PAGE 2   
+
+  55   2              {
+  56   3                  mode1_bidirectional_flow();
+  57   3              }
+  58   2          }
+  59   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    127    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
