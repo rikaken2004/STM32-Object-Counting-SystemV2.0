@@ -1,0 +1,82 @@
+/**
+ * MH-Sensor红外传感器测试
+ * 功能：检测到障碍物时LED闪烁指示
+ * 传感器：OUT接P3.2，低电平触发。用螺丝进行拧紧或松紧操作
+ * LED：共阳极，阴极接P3.6和P3.7，阳极接vcc（+5V），传感器调节方法 
+ * 找到传感器上的电位器（可调节电阻）
+ * 顺时针旋转：增加检测距离
+ * 逆时针旋转：减小检测距离
+ * 最佳调节：在所需检测距离处调节，直到指示灯刚好亮起
+ */
+
+#include <REG52.H>
+
+sbit LED1 = P3^6;
+sbit LED2 = P3^7;
+sbit Sensor_OUT = P3^2;  // 传感器输出引脚
+
+void DelayMS(unsigned int ms)
+{
+    unsigned int i, j;
+    for(i = ms; i > 0; i--)
+        for(j = 110; j > 0; j--);  // 11.0592MHz校准
+}
+
+// 外部中断0初始化
+void INT0_Init(void)
+{
+    IT0 = 1;    // 设置外部中断0为下降沿触发
+    EX0 = 1;    // 开启外部中断0
+    EA = 1;     // 开启总中断
+}
+
+// 外部中断0服务函数
+void INT0_ISR(void) interrupt 0
+{
+    unsigned char i;
+    
+    // 检测到障碍物：LED快速闪烁5次
+    for(i = 0; i < 5; i++)
+    {
+        LED1 = 0; LED2 = 0;  // 两个LED全亮
+        DelayMS(100);
+        LED1 = 1; LED2 = 1;  // 两个LED全灭
+        DelayMS(100);
+    }
+    
+    // 障碍物持续检测指示
+    while(Sensor_OUT == 0)  // 传感器输出保持低电平
+    {
+        LED1 = 0;  // LED1常亮表示持续检测
+        DelayMS(10);
+    }
+    
+    // 障碍物消失，恢复初始状态
+    LED1 = 1;
+}
+
+void main(void)
+{
+    unsigned char i;
+    
+    // 初始化
+    INT0_Init();
+    LED1 = 1;  // 共阳极初始熄灭
+    LED2 = 1;
+    
+    // 系统启动指示
+    for(i = 0; i < 3; i++)
+    {
+        LED1 = 0; DelayMS(200);
+        LED1 = 1;
+        LED2 = 0; DelayMS(200);
+        LED2 = 1;
+    }
+    
+    // 就绪状态：LED2慢闪表示系统运行
+    while(1)
+    {
+        LED2 = 0; DelayMS(500);  // LED2亮
+        LED2 = 1; DelayMS(500);  // LED2灭
+    }
+}

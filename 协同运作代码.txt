@@ -1,0 +1,338 @@
+#include <reg52.h>
+typedef unsigned char uchar;
+typedef unsigned int uint;
+
+// 端口定义
+sbit LED1 = P3^6;
+sbit LED2 = P3^7;
+
+// 串口初始化（9600bps，11.0592MHz晶振）
+void UART_Init(void) {
+    TMOD |= 0x20;  // 定时器1工作模式2（8位自动重装）
+    TH1 = 0xFD;    // 9600bps初值
+    TL1 = 0xFD;
+    TR1 = 1;       // 启动定时器1
+    SCON = 0x50;   // 串口工作模式1（8位UART，允许接收）
+    EA = 1;        // 开启总中断
+    ES = 1;        // 开启串口中断
+}
+
+// 串口发送一个字节
+void UART_SendByte(uchar dat) {
+    SBUF = dat;
+    while(!TI);    // 等待发送完成
+    TI = 0;        // 清除发送标志位
+}
+
+// 延时函数（ms级，11.0592MHz晶振）
+void Delay_ms(uint ms) {
+    uint i, j;
+    for(i = ms; i > 0; i--)
+        for(j = 110; j > 0; j--);
+}
+
+// 主机控制逻辑：LED1/LED2闪烁3次后发送指令
+void Main(void) {
+    uchar cnt = 0;
+    UART_Init();   // 初始化串口
+    while(1) {
+        // 闪烁3次（亮500ms+灭500ms为1次）
+        while(cnt < 3) {
+            LED1 = 0;  // 亮
+            LED2 = 0;
+            Delay_ms(500);
+            LED1 = 1;  // 灭
+            LED2 = 1;
+            Delay_ms(500);
+            cnt++;
+        }
+        UART_SendByte(0x01);  // 发送触发指令
+        while(1);  // 发送后停止闪烁，等待从机响应（可扩展其他逻辑）
+    }
+}
+
+// 串口中断服务函数（可选：接收从机应答）
+void UART_ISR(void) interrupt 4 {
+    uchar rec_dat;
+    if(RI) {       // 接收中断标志
+        rec_dat = SBUF;
+        RI = 0;     // 清除接收标志位
+        // 可添加应答处理逻辑（如收到从机确认后做其他操作）
+    }
+}
+//主机代码
+#include <reg52.h>
+typedef unsigned char uchar;
+typedef unsigned int uint;
+
+// 端口定义
+sbit LED3 = P3^6;
+sbit LED4 = P3^7;
+bit flag = 0;  // 常亮控制标志（0：闪烁，1：常亮）
+
+// 串口初始化（与主机一致）
+void UART_Init(void) {
+    TMOD |= 0x20;
+    TH1 = 0xFD;
+    TL1 = 0xFD;
+    TR1 = 1;
+    SCON = 0x50;
+    EA = 1;
+    ES = 1;
+}
+
+// 延时函数（与主机一致）
+void Delay_ms(uint ms) {
+    uint i, j;
+    for(i = ms; i > 0; i--)
+        for(j = 110; j > 0; j--);
+}
+
+// 从机控制逻辑：接收指令前闪烁，接收后常亮
+void Main(void) {
+    UART_Init();
+    LED3 = 1;  // 初始灭
+    LED4 = 1;
+    while(1) {
+        if(!flag) {  // 未收到指令：低频闪烁
+            LED3 = 0;
+            LED4 = 0;
+            Delay_ms(500);
+            LED3 = 1;
+            LED4 = 1;
+            Delay_ms(500);
+        } else {  // 收到指令：常亮
+            LED3 = 0;
+            LED4 = 0;
+        }
+    }
+}
+
+// 串口中断服务函数：接收主机指令
+void UART_ISR(void) interrupt 4 {
+    uchar rec_dat;
+    if(RI) {
+        rec_dat = SBUF;
+        RI = 0;
+        if(rec_dat == 0x01) {  // 验证指令
+            flag = 1;  // 置位常亮标志
+            // 可选：发送应答指令给主机
+            // UART_SendByte(0x02);
+        }
+    }
+}
+//从机代码
+连接方式ED1：P3.6 → 220Ω电阻 → LED1负极 | LED1正极 → +5V
+• 
+LED2：P3.7 → 220Ω电阻 → LED2负极 | LED2正极 → +5V
+UART连接：
+• 
+P3.0 (RxD) → 连接到主单片机 P3.0 (TxD)
+• 
+P3.1 (TxD) → 连接到主单片机 P3.1 (RxD)
+• 
+GND → 连接到主单片机 GND
+LED1：P3.6 → 220Ω电阻 → LED1负极 | LED1正极 → +5V
+• 
+LED2：P3.7 → 220Ω电阻 → LED2负极 | LED2正极 → +5V
+UART连接：
+• 
+P3.0 (TxD) → 连接到副单片机 P3.0 (RxD)
+• 
+P3.1 (RxD) → 连接到副单片机 P3.1 (TxD)
+• 
+GND → 连接到副单片机 GND
+增加设置目标数和确定两个按钮在从单片机里。后能运行代码
+副单片机
+#include <reg51.h>
+#include <intrins.h>
+
+// 从单片机P2口控制L298N的引脚定义
+sbit ENA   = P2^0;  // L298N使能A
+sbit ENB   = P2^1;  // L298N使能B
+sbit IN1   = P2^2;  // 电机A转向
+sbit IN2   = P2^3;
+sbit IN3   = P2^4;  // 电机B转向
+sbit IN4   = P2^5;
+
+// 变量定义
+bit stop_flag = 0;      // 停止指令标志
+unsigned int delay_time = 5000; // 5秒延迟重启
+
+// 精准毫秒延时（11.0592MHz晶振）
+void DelayMs(unsigned int ms)
+{
+    unsigned int i,j;
+    for(i=ms; i>0; i--)
+        for(j=110; j>0; j--); // 固定110，确保延时精准
+}
+
+// 串口初始化
+void UART_Init(void)
+{
+    TMOD = 0x20;       // 定时器1方式2（单独赋值，避免位操作冲突）
+    TH1 = 0xFD;        
+    TL1 = 0xFD;
+    TR1 = 1;           
+    SCON = 0x50;       
+    EA = 1;            // 开总中断
+    ES = 1;            // 开串口中断
+    TI = 0;            // 手动清发送标志
+    RI = 0;            // 手动清接收标志
+}
+
+// 串口发送函数
+void UART_Send(unsigned char dat)
+{
+    SBUF = dat;
+    while(TI == 0);  
+    TI = 0;          
+}
+
+// 【关键修复】简化串口中断，确保stop_flag必置位
+void UART_ISR(void) interrupt 4
+{
+    unsigned char recv_data;
+    if(RI) // 仅处理接收中断
+    {
+        recv_data = SBUF; // 读取指令
+        RI = 0;           // 清接收标志
+        if(recv_data == 0x01)
+        {
+            stop_flag = 1; // 强制置位停止标志
+        }
+    }
+}
+
+// 【关键修复】电机启停逻辑：增加LED提示（便于调试）
+sbit LED_DEBUG = P1^0; // 新增调试LED，电机停止时亮
+void Motor_Stop_Restart(void)
+{
+    if(stop_flag == 1)
+    {
+        LED_DEBUG = 1;   // 调试LED亮，提示电机停止
+        ENA = 0;         // 停止电机A
+        ENB = 0;         // 停止电机B
+        DelayMs(delay_time);  // 延迟5秒
+        ENA = 1;         // 重启电机A
+        ENB = 1;         // 重启电机B
+        LED_DEBUG = 0;   // 调试LED灭，提示电机重启
+        UART_Send(0x02); // 必发回传指令
+        stop_flag = 0;   // 清标志
+    }
+}
+
+void main(void)
+{
+    UART_Init();  
+    // 电机转向初始化
+    IN1 = 0; IN2 = 1;
+    IN3 = 0; IN4 = 1;
+    // 电机默认启动
+    ENA = 1;
+    ENB = 1;
+    LED_DEBUG = 0; // 调试LED初始灭
+
+    while(1)
+    {
+        Motor_Stop_Restart();  
+    }
+}
+主单片机
+#include <reg51.h>
+#include <intrins.h>
+
+// 数码管与LED引脚定义
+sbit SEG1_BIT10 = P0^0;
+sbit SEG1_BIT01 = P0^1;
+sbit SEG2_BIT10 = P0^2;
+sbit SEG2_BIT01 = P0^3;
+sbit SEG4_BIT1000 = P0^4;
+sbit SEG4_BIT100 = P0^5;
+sbit SEG4_BIT10 = P0^6;
+sbit SEG4_BIT01 = P0^7;
+sbit LED1 = P3^6;        // 扫描有效LED
+sbit LED2 = P3^7;        // 计数完成LED
+sbit LED_UART = P1^0;    // 新增串口调试LED：收到0x02时亮
+sbit IR_SENSOR = P3^5;   // 红外传感器
+
+// 按键引脚
+sbit KEY_ADD = P3^2;     // 加1键
+sbit KEY_CONFIRM = P3^3; // 确定键
+
+// 核心变量
+unsigned char num_set = 0;      // 目标值
+unsigned char num_scan = 0;     // 计数值
+unsigned int num_total = 0;     // 累计数
+bit scan_flag = 0;              // 红外防抖
+bit finish_flag = 0;            // 计数完成
+bit send_flag = 0;              // 发送标志
+bit recv_flag = 0;              // 回传标志
+bit set_mode = 1;               // 1=设置模式，0=计数模式
+
+// 共阳数码管段码表
+unsigned char code SEG_TABLE[] = {0xc0,0xf9,0xa4,0xb0,0x99,0x92,0x82,0xf8,0x80,0x90};
+
+// 微秒延时
+void DelayUs(unsigned int us) { while(us--); }
+
+// 毫秒延时
+void DelayMs(unsigned int ms)
+{
+    unsigned int i,j;
+    for(i=ms; i>0; i--)
+        for(j=11; j>0; j--);
+}
+
+// 串口初始化（修复位操作冲突）
+void UART_Init(void)
+{
+    TMOD = 0x20;       // 单独赋值，避免|=导致的模式冲突
+    TH1 = 0xFD;        
+    TL1 = 0xFD;
+    TR1 = 1;           
+    SCON = 0x50;       
+    EA = 1;            
+    ES = 1;            
+    TI = 0;
+    RI = 0;
+}
+
+// 串口发送
+void UART_Send(unsigned char dat)
+{
+    SBUF = dat;
+    while(TI == 0);  
+    TI = 0;          
+}
+
+// 【关键修复】串口中断：增加调试LED，确保recv_flag置位
+void UART_ISR(void) interrupt 4
+{
+    if(RI) 
+    {
+        if(SBUF == 0x02)  
+        {
+            recv_flag = 1;    
+            LED_UART = 1;    // 调试LED亮，提示收到回传
+        }
+        RI = 0;
+    }
+    TI = 0; 
+}
+
+// 第一个数码管显示
+void Display_SetNum(void)
+{
+    unsigned char ten, one;
+    ten = num_set / 10;
+    one = num_set % 10;
+
+    SEG1_BIT10 = 1;
+    SEG1_BIT01 = 0;
+    P2 = SEG_TABLE[ten];
+    DelayUs(100); 
+    SEG1_BIT10 = 0;
+
+    SEG1_BIT10 = 0;
+    SEG1_BIT01 

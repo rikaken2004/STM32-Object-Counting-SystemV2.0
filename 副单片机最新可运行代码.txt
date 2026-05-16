@@ -1,0 +1,123 @@
+#include <reg52.h>
+#include <intrins.h>
+
+// 引脚定义（严格匹配最新接线表）
+sbit LED_MOTOR = P3^0;       // 电机运行状态LED（共用）
+// 电机1控制引脚（ENA=使能，IN1/IN2=方向）
+sbit MOTOR1_ENA = P2^0;      // 电机1使能端（L298N ENA）
+sbit MOTOR1_IN1 = P2^2;      // 电机1方向控制1（L298N IN1）
+sbit MOTOR1_IN2 = P2^3;      // 电机1方向控制2（L298N IN2）
+// 电机2控制引脚（ENB=使能，IN3/IN4=方向）
+sbit MOTOR2_ENB = P2^1;      // 电机2使能端（L298N ENB）
+sbit MOTOR2_IN3 = P2^4;      // 电机2方向控制1（L298N IN3）
+sbit MOTOR2_IN4 = P2^5;      // 电机2方向控制2（L298N IN4）
+
+// 全局变量
+bit motor_run = 1;           // 电机运行标志（上电即转）
+unsigned char uart_recv_buf[3]; // 指令缓存（多数表决）
+unsigned char buf_idx = 0;   // 缓存索引
+unsigned char cmd_valid = 0x01; // 初始有效指令：启动
+unsigned int delay_restart = 0; // 重启延时计数器（10ms单位）
+bit stop_flag = 0;           // 停机标志
+
+// 延时函数
+void delay_ms(unsigned int ms) {
+    unsigned int i,j;
+    for(i=ms; i>0; i--)
+        for(j=110; j>0; j--);
+}
+
+// 串口初始化（9600波特率，11.0592MHz晶振）
+void uart_init() {
+    SCON = 0x50;  // 串口模式1（8N1）
+    TMOD |= 0x20; // 定时器1模式2（自动重装）
+    TH1 = 0xFD;   // 9600波特率初值
+    TL1 = 0xFD;
+    TR1 = 1;      // 启动定时器1
+    ES = 1;       // 开启接收中断
+    EA = 1;       // 开启总中断
+}
+
+// 电机控制核心函数（同步启停两个电机，匹配L298N逻辑）
+// L298N逻辑：使能端高电平有效；IN1=1/IN2=0 或 IN3=1/IN4=0 为正转；IN1=IN2=0 为停止
+void motor_control(bit run) {
+    // 使能端持续置高（常使能，无需频繁切换）
+    MOTOR1_ENA = 1;
+    MOTOR2_ENB = 1;
+    
+    if(run) { // 同步启动两个电机（正转）
+        // 电机1正转：IN1=1，IN2=0
+        MOTOR1_IN1 = 1;
+        MOTOR1_IN2 = 0;
+        // 电机2正转：IN3=1，IN4=0（与电机1完全同步）
+        MOTOR2_IN3 = 1;
+        MOTOR2_IN4 = 0;
+        // 状态更新
+        LED_MOTOR = 1;  // 运行LED点亮
+        motor_run = 1;
+        stop_flag = 0;
+        delay_restart = 0;
+    } else { // 同步停止两个电机
+        // 电机1停止：IN1=0，IN2=0（无驱动信号）
+        MOTOR1_IN1 = 0;
+        MOTOR1_IN2 = 0;
+        // 电机2停止：IN3=0，IN4=0（与电机1完全同步）
+        MOTOR2_IN3 = 0;
+        MOTOR2_IN4 = 0;
+        // 状态更新
+        LED_MOTOR = 0;  // 运行LED熄灭
+        motor_run = 0;
+        stop_flag = 1;
+    }
+}
+
+// 指令多数表决（确保指令可靠接收）
+void cmd_vote() {
+    unsigned char i;
+    unsigned char cnt01 = 0, cnt02 = 0;
+    for(i=0; i<3; i++) {
+        if(uart_recv_buf[i] == 0x01) cnt01++;
+        else if(uart_recv_buf[i] == 0x02) cnt02++;
+    }
+    if(cnt01 >= 2) cmd_valid = 0x01;
+    else if(cnt02 >= 2) cmd_valid = 0x02;
+    else cmd_valid = 0x00;
+}
+
+// 串口接收中断服务函数
+void uart_recv_isr() interrupt 4 {
+    if(RI) {
+        RI = 0;
+        uart_recv_buf[buf_idx] = SBUF;
+        buf_idx++;
+        if(buf_idx >= 3) {
+            buf_idx = 0;
+            cmd_vote();
+            if(cmd_valid == 0x01) motor_control(1);
+            else if(cmd_valid == 0x02) motor_control(0);
+        }
+    }
+}
+
+void main() {
+    uart_init();
+    // 初始化使能端为高，确保电机可被控制
+    MOTOR1_ENA = 1;
+    MOTOR2_ENB = 1;
+    motor_control(1); // 上电立即同步启动两个电机
+    
+    while(1) {
+        // 停机后延迟3秒自动同步重启
+        if(stop_flag) {
+            delay_restart++;
+            if(delay_restart >= 300) { // 300*10ms=3秒（可调整）
+                motor_control(1);
+            }
+        }
+        // 紧急停止：收到单个0x02指令直接同步停机
+        if(buf_idx > 0 && uart_recv_buf[buf_idx-1] == 0x02) {
+            motor_control(0);
+        }
+        delay_ms(10);
+    }
+}

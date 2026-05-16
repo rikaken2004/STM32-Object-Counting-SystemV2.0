@@ -1,0 +1,193 @@
+#include <reg52.h>
+#include <intrins.h>
+
+// 引脚定义（严格匹配接线表）
+sbit KEY_ADD = P3^2;        // 加值键：设置预置数（仅设置状态有效）
+sbit KEY_CONFIRM = P3^3;    // 确认/清零键：①确认预置数 ②清零重启
+sbit IR_SENSOR = P3^5;      // 红外传感器
+sbit LED_IR = P3^6;         // 红外触发LED
+sbit LED_FINISH = P3^7;     // 计数完成LED
+sbit LED_UART = P2^0;       // 串口状态LED
+
+// 数码管位选（P0口，共阳：高电平有效）
+sbit BIT_TARGET_TEN = P0^0; // 数码管1（预置数）十位
+sbit BIT_TARGET_ONE = P0^1; // 数码管1（预置数）个位
+sbit BIT_COUNT_TEN = P0^2;  // 数码管2（计数值）十位
+sbit BIT_COUNT_ONE = P0^3;  // 数码管2（计数值）个位
+sbit BIT_TOTAL_THOU = P0^4; // 累计总值千位（保留）
+sbit BIT_TOTAL_HUND = P0^5; // 累计总值百位
+sbit BIT_TOTAL_TEN = P0^6;  // 累计总值十位
+sbit BIT_TOTAL_ONE = P0^7;  // 累计总值个位
+
+// 共阳数码管段码表（0~9，段选低电平亮）
+unsigned char code seg_table[] = {0xC0,0xF9,0xA4,0xB0,0x99,
+                                  0x92,0x82,0xF8,0x80,0x90};
+
+// 全局变量（状态标志清晰区分不同阶段）
+unsigned char target_val = 0;    // 数码管1：预置数（0~99）
+unsigned char current_val = 0;   // 数码管2：实时计数值（0~target_val）
+unsigned int total_val = 0;      // 累计总值（0~9999）
+bit set_state = 1;               // 设置状态标志：1=可设置预置数，0=计数中/已完成
+bit count_finish = 0;            // 计数完成标志：1=达到预置数，0=未完成
+
+// 延时函数（消抖+扫描）
+void delay_ms(unsigned int ms) {
+    unsigned int i,j;
+    for(i=ms; i>0; i--)
+        for(j=110; j>0; j--);
+}
+
+// 红外防抖延时（30ms）
+void delay_30ms() {
+    unsigned int i,j;
+    for(i=30; i>0; i--)
+        for(j=110; j>0; j--);
+}
+
+// 串口初始化（9600波特率，11.0592MHz）
+void uart_init() {
+    SCON = 0x50;  // 串口模式1（8N1）
+    TMOD |= 0x20; // 定时器1模式2（自动重装）
+    TH1 = 0xFD;   // 9600波特率初值
+    TL1 = 0xFD;
+    TR1 = 1;      // 启动定时器1
+    ES = 0;       // 主单片机仅发送
+    EA = 1;
+}
+
+// 串口发送1字节（重复发送2次，确保从机接收）
+void uart_send_cmd(unsigned char cmd) {
+    SBUF = cmd;
+    while(!TI); TI = 0;
+    LED_UART = ~LED_UART;
+    delay_ms(5); // 间隔5ms，避免指令重叠
+    SBUF = cmd;
+    while(!TI); TI = 0;
+    LED_UART = ~LED_UART;
+}
+
+// 数码管动态扫描（确保双数码管同步显示，无闪烁）
+void seg_display() {
+    // 数码管1：显示预置数
+    P2 = seg_table[target_val/10];
+    BIT_TARGET_TEN = 1;
+    delay_ms(1);
+    BIT_TARGET_TEN = 0;
+    
+    P2 = seg_table[target_val%10];
+    BIT_TARGET_ONE = 1;
+    delay_ms(1);
+    BIT_TARGET_ONE = 0;
+    
+    // 数码管2：显示计数值
+    P1 = seg_table[current_val/10];
+    BIT_COUNT_TEN = 1;
+    delay_ms(1);
+    BIT_COUNT_TEN = 0;
+    
+    P1 = seg_table[current_val%10];
+    BIT_COUNT_ONE = 1;
+    delay_ms(1);
+    BIT_COUNT_ONE = 0;
+    
+    // 累计总值显示（可选）
+    P2 = seg_table[total_val/1000];
+    BIT_TOTAL_THOU = 1;
+    delay_ms(1);
+    BIT_TOTAL_THOU = 0;
+    
+    P2 = seg_table[(total_val%1000)/100];
+    BIT_TOTAL_HUND = 1;
+    delay_ms(1);
+    BIT_TOTAL_HUND = 0;
+    
+    P2 = seg_table[(total_val%100)/10];
+    BIT_TOTAL_TEN = 1;
+    delay_ms(1);
+    BIT_TOTAL_TEN = 0;
+    
+    P2 = seg_table[total_val%10];
+    BIT_TOTAL_ONE = 1;
+    delay_ms(1);
+    BIT_TOTAL_ONE = 0;
+}
+
+// 按键处理（核心：区分“确认预置数”和“清零重启”）
+void key_process() {
+    // 1. 加值键：仅设置状态有效（set_state=1），设置预置数
+    if(KEY_ADD == 0 && set_state == 1) {
+        delay_ms(20); // 消抖
+        if(KEY_ADD == 0) {
+            target_val++;
+            if(target_val > 99) target_val = 0; // 0~99循环
+            while(KEY_ADD == 0) seg_display(); // 等待释放，避免连按
+        }
+    }
+    
+    // 2. 确认/清零键：双功能切换
+    if(KEY_CONFIRM == 0) {
+        delay_ms(20); // 消抖
+        if(KEY_CONFIRM == 0) {
+            if(set_state == 1 && target_val > 0) {
+                // 功能①：设置状态+预置数>0 → 确认预置数，启动计数
+                set_state = 0;       // 切换到计数状态（禁止修改预置数）
+                count_finish = 0;    // 重置计数完成标志
+                LED_FINISH = 0;      // 熄灭完成LED
+                uart_send_cmd(0x01); // 发送电机启动指令
+            } else {
+                // 功能②：计数中/计数完成 → 一键清零重启
+                target_val = 0;      // 数码管1（预置数）清零
+                current_val = 0;     // 数码管2（计数值）清零
+                set_state = 1;       // 回到设置状态（可重新设置）
+                count_finish = 0;    // 重置完成标志
+                LED_FINISH = 0;      // 熄灭完成LED
+                uart_send_cmd(0x02); // 发送电机停止指令（若计数中）
+            }
+            while(KEY_CONFIRM == 0) seg_display(); // 等待释放
+        }
+    }
+}
+
+// 红外计数处理（达到预置数自动停止）
+void ir_count_process() {
+    if(set_state == 0 && count_finish == 0) { // 计数状态+未完成
+        if(IR_SENSOR == 0) { // 红外触发（低电平）
+            LED_IR = 1;
+            delay_30ms(); // 防抖，避免误计
+            
+            if(IR_SENSOR == 0) {
+                current_val++;
+                total_val++;
+                if(total_val > 9999) total_val = 0; // 累计值溢出清零
+                
+                // 达到预置数：停止计数，标记完成
+                if(current_val >= target_val) {
+                    count_finish = 1;  // 标记计数完成
+                    LED_FINISH = 1;    // 点亮完成LED
+                    uart_send_cmd(0x02); // 发送电机停止指令
+                }
+                
+                while(IR_SENSOR == 0) seg_display(); // 等待传感器释放
+            }
+            LED_IR = 0;
+        }
+    }
+}
+
+void main() {
+    uart_init();
+    // 初始状态：设置状态，双数码管清零，LED熄灭
+    target_val = 0;
+    current_val = 0;
+    set_state = 1;
+    count_finish = 0;
+    LED_IR = 0;
+    LED_FINISH = 0;
+    LED_UART = 0;
+    
+    while(1) {
+        seg_display();   // 优先显示，避免熄灭
+        key_process();   // 按键核心逻辑
+        ir_count_process(); // 红外计数
+    }
+}
